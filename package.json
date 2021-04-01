@@ -1,0 +1,14 @@
+{
+  "name": "fhir-server-new",
+  "version": "1.0.0",
+  "main": "index.js",
+  "license": "MIT",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "@asymmetrik/node-fhir-server-core": "^2.2.3",
+    "better-sqlite3": "^7.1.4",
+    "uuid": "^8.3.2"
+  }
+}

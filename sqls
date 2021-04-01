@@ -1,0 +1,5 @@
+
+-- pick out doctype = 3 and put into a practitioner table
+CREATE TABLE Practitioner AS 
+select * from person 
+where PRSN_ID in (select PRDT_PRSN_ID  from PERSON_DOC where PERSON_DOC.PRDT_DCTP_ID = 3);
