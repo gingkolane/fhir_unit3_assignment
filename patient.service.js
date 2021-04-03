@@ -73,7 +73,8 @@ function mapPersonDocRecordToPatientIdentifier(person) {
     // get all personDoc records related to a person
     const db = new Database('./persondb.db', { verbose: console.log })
     const stmt = db.prepare(`select * from PERSON_DOC where PERSON_DOC.PRDT_PRSN_ID = ?`)
-    const personDocArray = stmt.all('person.PRSN_ID')
+    const personId = parseInt(person.PRSN_ID)
+    const personDocArray = stmt.all(personId)
 
     // convert DocType to system:value identifier
     personDocArray.forEach((personDoc) => {
@@ -241,14 +242,13 @@ async function searchById(args) {
 
     if (personFound) {
 
-        R = await mapPersonToPatientResource(personFound)
-        R = await mapPersonDocRecordToPatientIdentifier(personFound)
+        // let patientResource = await mapPersonToPatientResource(personFound)
+        // return patientResource;
+        return mapPersonToPatientResource(personFound)
 
-        return R;
-2
     } else {
         let OO = new OperationOutcome();
-        var message = "Patient with id "+ id + " not found ";
+        // var message = "Patient with id "+ id + " not found ";
         OO.issue = [{
             "severity": "error",
             "code": "processing",
