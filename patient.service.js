@@ -162,10 +162,10 @@ async function search(args, context) {
     const {base_version, _id, _COUNT} = args;
     const {family, gender, birthdate, email, name, identifier} = args;
 
+    var personArray = []
     var searchCriteria = [];
     var values = []
-    var personArray = []
-
+    
     // Convert args to stmt clause. If a request contains a specific search parameter, we create a stmt for each query parameter
     if (family) { 
         searchCriteria.push("PRSN_LAST_NAME = ?")
@@ -191,24 +191,20 @@ async function search(args, context) {
         searchCriteria.push("PRSN_FIRST_NAME like ? OR PRSN_LAST_NAME like ? OR PRSN_SECOND_NAME like ?")
         values.push(name, name, name)
     }
+    //convert identifier to person and add it back to search criteria
     if (identifier) {
-        //identifier correlate to one person
-        let person = await mapPatientidentifierToPerson(identifier)
-        personArray.push(person)
+        let person = await mapPatientidentifierToPerson(identifier)  
+        searchCriteria.push("PRSN_ID = ?")
+        values.push(person.PRSN_ID)
     }
     
     searchCriteria = searchCriteria.join(' AND ')
 
     //open a database conneciton and query db with condition above
     const db = new Database('./persondb.db', { verbose: console.log })
-    let rows = db.prepare(`select * from PERSON WHERE ${searchCriteria}`).all(values)
+    personArray = db.prepare(`select * from PERSON WHERE ${searchCriteria}`).all(values)
 
-    // combine main search with identifier search
-    combined = [...personArray, ...rows]
-    // keep unique persons using set properties
-    personArray = [...new Set(combined)]
-    
-    // convert person records into an patient resource objects
+    // convert personArray (records from database) into an array of patient resource objects
     const patientArray = await Promise.all(
         personArray.map( async (person) => {return mapPersonToPatientResource(person)}) //return is also await for one promise
     )
@@ -310,7 +306,7 @@ async function create(args, context) {
     return {
         id: personId,
       };
-    // db.close();
+      
 }
 
 module.exports = {
