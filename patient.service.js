@@ -160,59 +160,55 @@ async function search(args, context) {
 
     //Our server offer search with these search parameters: family, gender, birthdate, _id, email, name
     const {base_version, _id, _COUNT} = args;
-    const {family, gender, birthDate, email, name, identifier} = args;
+    const {family, gender, birthdate, email, name, identifier} = args;
 
-    //open a database conneciton and query db with condition above
-    const db = new Database('./persondb.db', { verbose: console.log })
-    var personArray = []; //this is the array to hold filtered persons
+    var searchCriteria = [];
+    var values = []
+    var personArray = []
 
     // Convert args to stmt clause. If a request contains a specific search parameter, we create a stmt for each query parameter
     if (family) { 
-        const rows = db.prepare('select * from PERSON WHERE PRSN_LAST_NAME = ?').all(family)
-        // if row does not exist in the personArray, put it in
-        rows.forEach(row => { 
-            if (!personArray.includes(row)) personArray.push(row) 
-          })
+        searchCriteria.push("PRSN_LAST_NAME = ?")
+        values.push(family)
         }
     if (gender) { 
-        const rows = db.prepare('select * from PERSON WHERE PRSN_GENDER = ?').all(gender)
-        rows.forEach(row=> { 
-            if (!personArray.includes(row)) personArray.push(row) 
-          })
+        searchCriteria.push("PRSN_GENDER = ?")
+        values.push(gender)
         }
-    if (birthDate) { 
-        const rows = db.prepare('select * from PERSON WHERE PRSN_BIRTH_DATE = ?').all(birthDate)
-        rows.forEach(row => { 
-            if (!personArray.includes(row)) personArray.push(row) 
-          })
+    if (birthdate) { 
+        searchCriteria.push("PRSN_BIRTH_DATE = ?");
+        values.push(birthdate)
         }
     if (_id) { 
-        const rows = db.prepare('select * from PERSON WHERE PRSN_ID = ?').all(_id)
-        rows.forEach(row => { 
-            if (!personArray.includes(row)) personArray.push(row) 
-          })
+        searchCriteria.push("PRSN_ID = ?")
+        values.push(_id)
         }
     if (email) {
-        const rows = db.prepare('select * from PERSON WHERE PRSN_EMAIL = ?').all(email)
-        rows.forEach(row => { 
-            if (!personArray.includes(row)) personArray.push(row) 
-          })
+        searchCriteria.push("PRSN_EMAIL = ?")
+        values.push(email)
         }
     if (name) { 
-        const rows = db.prepare('SELECT * from PERSON WHERE PRSN_FIRST_NAME like ? OR PRSN_LAST_NAME like ? OR PRSN_SECOND_NAME like ?').all(name, name, name)
-        rows.forEach(row => { 
-            if (!personArray.includes(row)) personArray.push(row) 
-          })
+        searchCriteria.push("PRSN_FIRST_NAME like ? OR PRSN_LAST_NAME like ? OR PRSN_SECOND_NAME like ?")
+        values.push(name, name, name)
     }
     if (identifier) {
         //identifier correlate to one person
         let person = await mapPatientidentifierToPerson(identifier)
-        
-        if (!personArray.includes(person)) {personArray.push(person)} 
-        else { personArray }
-        }
+        personArray.push(person)
+    }
+    
+    searchCriteria = searchCriteria.join(' AND ')
 
-    // convert person records into an patient resource object arrays
+    //open a database conneciton and query db with condition above
+    const db = new Database('./persondb.db', { verbose: console.log })
+    let rows = db.prepare(`select * from PERSON WHERE ${searchCriteria}`).all(values)
+
+    // combine main search with identifier search
+    combined = [...personArray, ...rows]
+    // keep unique persons using set properties
+    personArray = [...new Set(combined)]
+    
+    // convert person records into an patient resource objects
     const patientArray = await Promise.all(
         personArray.map( async (person) => {return mapPersonToPatientResource(person)}) //return is also await for one promise
     )
