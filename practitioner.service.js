@@ -151,6 +151,7 @@ async function mapPractitioneridentifierToPerson(identifier) {
         //use tertiary operation to conditional assign value to PRDT_DCTP_ID
         let PRDT_DCTP_ID = (identifier_system === "https://www.national-office.gov/ni") ? 1
         :(identifier_system === "https://www.foreign-affairs.gov/pp") ? 2
+        :(identifier_system === "NPI") ? 3
         :null
 
         // filter persons with the specific docType and doc_value
@@ -192,7 +193,7 @@ async function search(args, context) {
         values.push(email)
         }
     if (name) { 
-        searchCriteria.push("PRSN_FIRST_NAME like ? OR PRSN_LAST_NAME like ? OR PRSN_SECOND_NAME like ?")
+        searchCriteria.push("PERSON.PRSN_FIRST_NAME like ? OR PERSON.PRSN_LAST_NAME like ? OR PERSON.PRSN_SECOND_NAME like ?")
         values.push(name, name, name)
     }
     //convert identifier to person and add it back to search criteria
@@ -206,7 +207,7 @@ async function search(args, context) {
 
     //open a database conneciton and query db with condition above
     const db = new Database('./persondb.db', { verbose: console.log })
-    personArray = db.prepare(`select * from PERSON WHERE ${searchCriteria}`).all(values)
+    personArray = db.prepare(`select * from PERSON INNER JOIN PERSON_DOC ON PERSON.PRSN_ID = PERSON_DOC.PRDT_PRSN_ID WHERE PERSON_DOC.PRDT_DCTP_ID = 3 AND ${searchCriteria}`).all(values)
 
     // convert personArray (records from database) into an array of practitioner resource objects
     const practitionerArray = await Promise.all(
@@ -249,7 +250,6 @@ async function searchById(args) {
     const db = new Database('./persondb.db', { verbose: console.log })
     const stmt = db.prepare('SELECT * FROM PERSON INNER JOIN PERSON_DOC ON PERSON.PRSN_ID = PERSON_DOC.PRDT_PRSN_ID WHERE PERSON_DOC.PRDT_DCTP_ID = 3 AND PERSON.PRSN_ID = ?')
     let personFound= stmt.get(id)
-    console.log("248", personFound)
 
     if (personFound) {
 

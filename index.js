@@ -8,6 +8,10 @@ let config = {
       service: './patient.service.js',
       versions: [VERSIONS['4_0_0']],
     },
+    practitioner: {
+      service: './practitioner.service.js',
+      versions: [VERSIONS['4_0_0']],
+    }
   }
 };
 

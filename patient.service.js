@@ -54,7 +54,7 @@ async function mapPersonToPatientResource(person) {
 
     patient.text = {
         "status": "generated",
-        "div": '<div xmlns="http://www.w3.org/1999/xhtml">' + patient.name[0] + "</div>"
+        "div": '<div xmlns="http://www.w3.org/1999/xhtml">' + patient.name[0].text + "</div>"
     };
 
     return patient
@@ -65,7 +65,7 @@ function getPatientIdentifierThroPersonDoc(person) {
     //every patient has the hospital_id as the default identifier, patientIdentifier is an array
     let patientIdentifier = [{
         use: "official",
-        system: "https://saintmartinhospital.org/patient-id",
+        system: "https://saintmartinhospital.org",
         value: person.PRSN_ID,
         period: {start: person.PRSN_CREATE_DATE }
     }]
@@ -77,30 +77,26 @@ function getPatientIdentifierThroPersonDoc(person) {
     const personDocArray = stmt.all(personId)
 
     // convert DocType to system:value identifier
-    personDocArray.forEach( (personDoc) => {
-        switch (personDoc.PRDT_DCTP_ID) {
-            case "1":
-                patientIdentifier.push({
-                    use: "usual",
-                    system: "https://www.national-office.gov/ni",
-                    value: personDoc.PRDT_DOC_VALUE, 
-                    period: {start: personDoc.PRDT_CREAT_DATE }
-                });
-                break;
+    // convert DocType to system:value identifier
+    personDocArray.forEach((personDoc) => {
+        let item ={}
+        if (personDoc.PRDT_DCTP_ID === 1) 
+            item = {    use: "usual",
+                            system: "https://www.national-office.gov/ni",
+                            value: personDoc.PRDT_DOC_VALUE, 
+                            period: {start: personDoc.PRDT_CREATE_DATE }
+                        }
 
-            case "2":
-                patientIdentifier.push({
+        if (personDoc.PRDT_DCTP_ID === 2) 
+            item = {
                     use: "official",
                     system: "https://www.foreign-affairs.gov/pp",
                     value: personDoc.PRDT_DOC_VALUE, 
                     period: {start: personDoc.PRDT_CREATE_DATE }
-                });
-                break;
-            default: 
-                break;
-        } 
-    })
+                }
 
+        patientIdentifier.push(item);
+    })
     return patientIdentifier
 }
 
@@ -236,6 +232,7 @@ async function search(args, context) {
             entry: entries
         })
     return bundle;
+
 }    
 
 async function searchById(args) {
