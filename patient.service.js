@@ -22,7 +22,7 @@ function GetBaseUrl(context) {
 }
 
 // convert a person record into fhir patient resource
-function mapPersonToPatientResource(person) {
+async function mapPersonToPatientResource(person) {
 
     // define a new fhir patient resource instance
     let patient = new Patient
@@ -33,7 +33,7 @@ function mapPersonToPatientResource(person) {
     patient.birthDate = person.PRSN_BIRTH_DATE;
     patient.telecom = [{
         "system": "email",
-        "value": person.PRSN_EMAIL.toString(),
+        "value": person.PRSN_EMAIL,
         "use":"home"
         }];
 
@@ -50,7 +50,7 @@ function mapPersonToPatientResource(person) {
         }
     ]
 
-    patient.identifier = mapPersonDocRecordToPatientIdentifier(person)
+    patient.identifier = await getPatientIdentifierThroPersonDoc(person)
 
     patient.text = {
         "status": "generated",
@@ -60,8 +60,8 @@ function mapPersonToPatientResource(person) {
     return patient
 }
 
-// convert person doc information into patient identifier
-function mapPersonDocRecordToPatientIdentifier(person) {
+function getPatientIdentifierThroPersonDoc(person) {
+
     //every patient has the hospital_id as the default identifier, patientIdentifier is an array
     let patientIdentifier = [{
         use: "official",
@@ -77,7 +77,7 @@ function mapPersonDocRecordToPatientIdentifier(person) {
     const personDocArray = stmt.all(personId)
 
     // convert DocType to system:value identifier
-    personDocArray.forEach((personDoc) => {
+    personDocArray.forEach( (personDoc) => {
         switch (personDoc.PRDT_DCTP_ID) {
             case "1":
                 patientIdentifier.push({
@@ -96,12 +96,12 @@ function mapPersonDocRecordToPatientIdentifier(person) {
                     period: {start: personDoc.PRDT_CREATE_DATE }
                 });
                 break;
-
             default: 
                 break;
         } 
     })
-    return patientIdentifier;
+
+    return patientIdentifier
 }
 
 function createPersonDocRecord(personId,identifier) {
@@ -128,34 +128,35 @@ function createPersonDocRecord(personId,identifier) {
 
 }
 
-async function searchByIdentifier(identifier) {
+async function mapPatientidentifierToPerson(identifier) {
 
     let identifierArray = identifier.split("|"); // [ 'https://saintmartinhospital.org/patient-id', '1' ]
     let identifier_system = identifierArray[0]
     let identifier_value = identifierArray[1]
 
-    if (identifier_system === "https://saintmartinhospital.org/patient-id") {
-        return searchById(identifier_value)
-        }
-    
-    let PRDT_DCTP_ID = 0
-    if (identifier_system === "https://www.national-office.gov/ni") {PRDT_DCTP_ID = 1}
-    if (identifier_system === "https://www.foreign-affairs.gov/pp") {PRDT_DCTP_ID = 2}
-
     // create db connection
     const db = new Database('./persondb.db', { verbose: console.log })
-    // filter persons with the specific docType
-    let stmt = db.prepare('SELECT * from PERSON where PERSON.PRSN_ID = (SELECT PRDT_PRSN_ID from PERSON_DOC WHERE PRDT_DCTP_ID = ? AND PRDT_DOC_VALUE = ?)');
-    //get one person fitting the criteria
-    let personFound = stmt.get(PRDT_DCTP_ID, identifier_value)
 
-    let patient = await mapPersonToPatientResource(personFound)
+    if (identifier_system === "https://saintmartinhospital.org/patient-id") {
 
-    return patient
+        let person = db.prepare('SELECT * from PERSON WHERE PRSN_ID = ? ').get(identifier_value)
 
+        return person
+
+    } else {
+        //use tertiary operation to conditional assign value to PRDT_DCTP_ID
+        let PRDT_DCTP_ID = (identifier_system === "https://www.national-office.gov/ni") ? 1
+        :(identifier_system === "https://www.foreign-affairs.gov/pp") ? 2
+        :null
+
+        // filter persons with the specific docType and doc_value
+        let stmt = db.prepare('SELECT * from PERSON where PERSON.PRSN_ID = (SELECT PRDT_PRSN_ID from PERSON_DOC WHERE PRDT_DCTP_ID = ? AND PRDT_DOC_VALUE = ?)');
+        let person = stmt.get(PRDT_DCTP_ID, identifier_value)
+        return person
+    }
 }
 
-function search(args, context) { 
+async function search(args, context) { 
 
     //Our server offer search with these search parameters: family, gender, birthdate, _id, email, name
     const {base_version, _id, _COUNT} = args;
@@ -163,54 +164,67 @@ function search(args, context) {
 
     //open a database conneciton and query db with condition above
     const db = new Database('./persondb.db', { verbose: console.log })
-    let stmt ='';
-    let personArray = [];
+    var personArray = []; //this is the array to hold filtered persons
+
     // Convert args to stmt clause. If a request contains a specific search parameter, we create a stmt for each query parameter
     if (family) { 
-        stmt = db.prepare('select * from PERSON WHERE PRSN_LAST_NAME = ?')
-        personArray = stmt.all(family)
+        const rows = db.prepare('select * from PERSON WHERE PRSN_LAST_NAME = ?').all(family)
+        // if row does not exist in the personArray, put it in
+        rows.forEach(row => { 
+            if (!personArray.includes(row)) personArray.push(row) 
+          })
         }
     if (gender) { 
-        stmt = db.prepare('select * from PERSON WHERE PRSN_GENDER = ?')
-        personArray = stmt.all(gender)
+        const rows = db.prepare('select * from PERSON WHERE PRSN_GENDER = ?').all(gender)
+        rows.forEach(row=> { 
+            if (!personArray.includes(row)) personArray.push(row) 
+          })
         }
     if (birthDate) { 
-        stmt = db.prepare('select * from PERSON WHERE PRSN_BIRTH_DATE = ?')
-        personArray = stmt.all(birthdate)
+        const rows = db.prepare('select * from PERSON WHERE PRSN_BIRTH_DATE = ?').all(birthDate)
+        rows.forEach(row => { 
+            if (!personArray.includes(row)) personArray.push(row) 
+          })
         }
     if (_id) { 
-        stmt = db.prepare('select * from PERSON WHERE PRSN_ID = ?')
-        personArray= stmt.all(_id)
+        const rows = db.prepare('select * from PERSON WHERE PRSN_ID = ?').all(_id)
+        rows.forEach(row => { 
+            if (!personArray.includes(row)) personArray.push(row) 
+          })
         }
     if (email) {
-        stmt = db.prepare('select * from PERSON WHERE PRSN_EMAIL = ?')
-        personArray = stmt.all(email)
+        const rows = db.prepare('select * from PERSON WHERE PRSN_EMAIL = ?').all(email)
+        rows.forEach(row => { 
+            if (!personArray.includes(row)) personArray.push(row) 
+          })
         }
     if (name) { 
-        // stmt = db.prepare(`select * from PERSON WHERE PRSN_LAST_NAME like ${name} OR PRSN_FIRST_NAME like ${name} OR PRSN_SECOND_NAME like ${name}`);
-        stmt1 = db.prepare('select * from PERSON WHERE PRSN_FIRST_NAME like ?');
-        let personArray1 = stmt1.all(name)
-
-        stmt2 = db.prepare('select * from PERSON WHERE PRSN_LAST_NAME like ?');
-        let personArray2 = stmt2.all(name)
-
-        stmt3 = db.prepare('select * from PERSON WHERE PRSN_SECOND_NAME like ?');
-        let personArray3 = stmt3.all(name)
-
-        personArray = [...personArray1, ...personArray2, ...personArray3]
-
+        const rows = db.prepare('SELECT * from PERSON WHERE PRSN_FIRST_NAME like ? OR PRSN_LAST_NAME like ? OR PRSN_SECOND_NAME like ?').all(name, name, name)
+        rows.forEach(row => { 
+            if (!personArray.includes(row)) personArray.push(row) 
+          })
     }
-    if (identifier) { return searchByIdentifier(identifier)}
-    
+    if (identifier) {
+        //identifier correlate to one person
+        let person = await mapPatientidentifierToPerson(identifier)
+        
+        if (!personArray.includes(person)) {personArray.push(person)} 
+        else { personArray }
+        }
+
     // convert person records into an patient resource object arrays
-    let patientArray = personArray.map(person => {return mapPersonToPatientResource(person)});
+    const patientArray = await Promise.all(
+        personArray.map( async (person) => {return mapPersonToPatientResource(person)}) //return is also await for one promise
+    )
+
     let baseUrl = GetBaseUrl(context)
     const count = patientArray.length
 
     //2. Assemble the patient objects into entries
     let entries = patientArray.map((patient) => 
         {   
-            let entry = new BundleEntry({
+            let entry = new BundleEntry
+            ({
                 fullUrl: baseUrl + '/Patient/' + patient.id,
                 resource: patient
             })
@@ -224,7 +238,7 @@ function search(args, context) {
                 relation: "self",
                 url: baseUrl + "Patient"
             }],
-            meta: { astUpdated: new Date()},
+            meta: { lastUpdated: new Date()},
             type: "searchset",
             total: count,
             entry: entries
@@ -242,13 +256,15 @@ async function searchById(args) {
 
     if (personFound) {
 
-        // let patientResource = await mapPersonToPatientResource(personFound)
-        // return patientResource;
-        return mapPersonToPatientResource(personFound)
+        const patientResource = await mapPersonToPatientResource(personFound)
+        return patientResource;
+
+        // if you are just await a single promise, you can simply return with it, no need to await for it
+        // return mapPersonToPatientResource(personFound)
 
     } else {
         let OO = new OperationOutcome();
-        // var message = "Patient with id "+ id + " not found ";
+        var message = "Patient with id "+ id + " not found ";
         OO.issue = [{
             "severity": "error",
             "code": "processing",
@@ -279,8 +295,6 @@ async function create(args, context) {
     // Match value to keys(columnNames)
     let columnNames = "(PRSN_FIRST_NAME,PRSN_SECOND_NAME,PRSN_LAST_NAME,PRSN_BIRTH_DATE,PRSN_GENDER,PRSN_EMAIL,PRSN_NICK_NAME,PRSN_CREATE_DATE)"
 
-    // let personValues = firstName, secondName,lastName, birthDate, gender, email, nickname, createdAt
-
     const db = new Database('./persondb.db', { verbose: console.log })
 
     const stmt = db.prepare(`INSERT INTO PERSON ${columnNames} VALUES (?, ?, ?, ?, ?, ?, ?, ?)`);
@@ -297,7 +311,6 @@ async function create(args, context) {
     })
 
     //We create the response object, which has the personId of the newly created person.
-    console.log("create patient, new patient Id", personId)
     return {
         id: personId,
       };
@@ -306,9 +319,9 @@ async function create(args, context) {
 
 module.exports = {
     mapPersonToPatientResource,
-    mapPersonDocRecordToPatientIdentifier,
+    getPatientIdentifierThroPersonDoc,
+    mapPatientidentifierToPerson,
     createPersonDocRecord,
-    searchByIdentifier,
     search, 
     searchById,
     create
